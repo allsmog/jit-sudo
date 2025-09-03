@@ -1,0 +1,33 @@
+[package]
+name = "libjit_sudo"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# JWT/crypto
+jsonwebtoken = "9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ed25519-dalek = "2"
+chrono = "0.4"
+
+# Audit/logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# IPC
+tokio = { version = "1", features = ["net", "sync", "rt"] }
+
+# FFI
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+mockall = "0.13"

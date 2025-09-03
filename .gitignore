@@ -1,0 +1,54 @@
+# Rust
+/target/
+**/target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# C/C++
+*.o
+*.a
+*.so
+*.dll
+*.dylib
+*.lib
+*.exe
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+*.out
+
+# Build artifacts
+jit_approval.so
+jitd
+jitctl
+build/
+dist/
+
+# Configuration
+config.toml
+*.conf
+!example*.conf
+
+# Runtime
+*.sock
+*.pid
+/var/lib/jit-sudo/
+/run/jit-sudo/
+
+# Temporary
+*.tmp
+*.temp
+.cache/
+
+# OS
+Thumbs.db
+.directory
