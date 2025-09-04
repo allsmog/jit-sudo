@@ -1,0 +1,114 @@
+# JIT Sudo Configuration - YAML Format
+# Alternative format for teams preferring YAML
+# /etc/jit-sudo/config.yaml
+
+core:
+  socket_path: /run/jit-sudo/jitd.sock
+  storage_path: /var/lib/jit-sudo
+  log_level: info
+  max_connections: 100
+  request_timeout_secs: 30
+
+security:
+  encryption_enabled: true
+  key_storage: file
+  key_directory: /etc/jit-sudo/keys
+  jwks_url: https://auth.company.com/.well-known/jwks.json
+  trusted_issuers:
+    - https://jit-broker.company.com
+    - https://identity.company.com
+  max_ttl_seconds: 14400  # 4 hours
+  require_tls: true
+  audit_integrity: true
+
+approval:
+  mode: risk-based
+  require_justification: true
+  min_justification_length: 10
+  request_expiry_minutes: 30
+  
+  risk_thresholds:
+    auto_approve: 2
+    admin_approve: 6  
+    multi_approve: 10
+    
+  auto_approve:
+    enabled: true
+    max_ttl_seconds: 3600
+    business_hours_only: false
+    hours: "00:00-23:59"
+    days: Mon-Sun
+    non_production_only: false
+    
+    commands:
+      - ls
+      - cat
+      - grep
+      - head
+      - tail
+      - find
+      - ps
+      - df
+      - free
+      - whoami
+      - id
+      - date
+      - systemctl status
+      
+    privileged_users:
+      - sre-team
+      - devops-lead
+      
+  never_approve:
+    commands:
+      - rm -rf
+      - dd
+      - mkfs
+      - shutdown
+      - reboot
+      
+    patterns:
+      - "*password*"
+      - "*shadow*"
+      - "*/etc/passwd"
+      
+    blocked_users: []
+
+risk_scoring:
+  command_weights:
+    rm: 5
+    dd: 9
+    systemctl: 3
+    iptables: 7
+    chmod: 2
+    docker: 4
+    kubectl: 5
+    
+  production_multiplier: 1.5
+  after_hours_bonus: 1
+  emergency_flag_bonus: 0
+  privileged_user_bonus: 1
+
+logging:
+  audit_path: /var/log/jit-sudo/audit.log
+  app_log_path: /var/log/jit-sudo/app.log
+  max_size_mb: 100
+  max_files: 10
+  format: json
+  syslog_enabled: true
+  syslog_facility: local0
+
+notifications:
+  slack_webhook: https://hooks.slack.com/services/YOUR/WEBHOOK/HERE
+  admin_emails:
+    - security@company.com
+    - ops@company.com
+  user_notifications: true
+  cooldown_minutes: 5
+  
+  email:
+    smtp_host: smtp.company.com
+    smtp_port: 587
+    username: jit-sudo@company.com
+    from_address: jit-sudo@company.com
+    use_tls: true

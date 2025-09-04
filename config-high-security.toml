@@ -1,0 +1,148 @@
+# JIT Sudo High Security Configuration
+# For financial services, healthcare, or other highly regulated environments
+# /etc/jit-sudo/config-high-security.toml
+
+[core]
+socket_path = "/run/jit-sudo/jitd.sock"
+storage_path = "/var/lib/jit-sudo"
+log_level = "info"
+max_connections = 100
+request_timeout_secs = 15  # Shorter timeout for security
+
+[security]
+encryption_enabled = true
+key_storage = "tpm"   # Mandatory TPM for high security
+key_directory = "/etc/jit-sudo/keys"
+jwks_url = "https://auth.company.com/.well-known/jwks.json"
+trusted_issuers = ["https://jit-broker.company.com"]  # Single trusted issuer
+max_ttl_seconds = 3600   # 1 hour maximum - short duration
+require_tls = true
+audit_integrity = true
+
+[approval]
+mode = "manual"  # ALL requests require human approval
+require_justification = true
+min_justification_length = 50  # Detailed justification required
+request_expiry_minutes = 15    # Short expiry window
+
+[approval.risk_thresholds]
+auto_approve = 0      # NO auto-approval
+admin_approve = 5     # Most commands need admin approval  
+multi_approve = 7     # Lower threshold for multi-approval
+
+[approval.auto_approve]
+enabled = false  # Completely disabled for high security
+max_ttl_seconds = 0
+business_hours_only = true
+hours = "09:00-17:00"  # Business hours only
+days = "Mon-Fri"       # Weekdays only
+non_production_only = true
+
+# Very limited safe commands (mostly read-only)
+commands = [
+    "ls", "cat", "grep", "head", "tail", 
+    "ps", "df", "free", "whoami", "id", "date"
+]
+
+privileged_users = []  # No privileged users
+
+[approval.never_approve]
+# Extensive blocklist for high security
+commands = [
+    "rm", "dd", "mkfs", "fdisk", "parted", "gparted",
+    "shutdown", "reboot", "halt", "poweroff", "systemctl stop",
+    "systemctl disable", "systemctl mask", "service stop",
+    "iptables", "ufw", "firewall-cmd", "netfilter",
+    "mount", "umount", "fsck", "tune2fs",
+    "useradd", "userdel", "usermod", "passwd", "chpasswd",
+    "groupadd", "groupdel", "groupmod", "visudo",
+    "crontab", "at", "batch", "anacron",
+    "docker", "podman", "lxc", "systemd-nspawn",
+    "ssh-keygen", "ssh-add", "ssh-agent"
+]
+
+patterns = [
+    "*password*", "*passwd*", "*shadow*", "*private*", "*secret*",
+    "*key*", "*cert*", "*credential*", "*token*",
+    "*/etc/passwd", "*/etc/shadow", "*/etc/sudoers*",
+    "*/root/*", "*/home/*/.ssh/*", "*/.aws/*", "*/.kube/*",
+    "*/var/lib/mysql/*", "*/var/lib/postgresql/*",
+    "*/opt/*/config/*", "*/etc/ssl/*", "*/etc/pki/*"
+]
+
+blocked_users = ["root"]  # Block direct root requests
+
+[risk_scoring]
+[risk_scoring.command_weights]
+# Higher risk weights across the board
+ls = 1
+cat = 2
+grep = 1
+systemctl = 6
+service = 6
+nginx = 4
+apache2 = 4
+mysql = 8
+postgresql = 8
+chmod = 4
+chown = 4
+kill = 4
+mount = 6
+umount = 5
+iptables = 9
+docker = 7
+kubectl = 8
+
+# Aggressive risk modifiers
+production_multiplier = 3.0  # 3x risk increase for production
+after_hours_bonus = 3        # Heavy penalty for after-hours
+emergency_flag_bonus = 1     # Even emergencies get risk increase
+privileged_user_bonus = 2    # Higher risk for admin users
+
+[logging]
+audit_path = "/var/log/jit-sudo/audit.log"
+app_log_path = "/var/log/jit-sudo/app.log"
+max_size_mb = 1000   # Large log files for compliance
+max_files = 100      # Keep extensive history (100GB total)
+format = "json"      # Structured for compliance tools
+syslog_enabled = true
+syslog_facility = "local2"
+
+[notifications]
+# Multiple notification channels for high security
+slack_webhook = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+pagerduty_key = "your-high-priority-pagerduty-key"
+
+admin_emails = [
+    "security@company.com",
+    "ciso@company.com",
+    "compliance@company.com",
+    "audit@company.com"
+]
+
+user_notifications = true
+cooldown_minutes = 0  # No cooldown - notify on every request
+
+[notifications.email]
+smtp_host = "smtp.company.com"
+smtp_port = 587
+username = "jit-sudo-security@company.com"
+password = "$SMTP_PASSWORD"
+from_address = "jit-sudo-security@company.com"
+use_tls = true
+
+# Comments for compliance officers:
+# 
+# This configuration implements:
+# - SOX Compliance: All privileged access logged and approved
+# - PCI DSS: No auto-approval, detailed audit trails
+# - HIPAA: Strong access controls and audit logging
+# - ISO 27001: Risk-based access management
+# 
+# Approval workflow:
+# 1. All requests require human approval (mode = "manual")
+# 2. Detailed justification mandatory (50+ characters)
+# 3. Short grant durations (max 1 hour)
+# 4. Multiple approvers for sensitive operations
+# 5. Complete audit trail with integrity protection
+# 6. Real-time notifications to security team

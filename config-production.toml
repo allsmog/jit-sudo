@@ -1,0 +1,124 @@
+# JIT Sudo Production Configuration
+# /etc/jit-sudo/config.toml
+
+[core]
+socket_path = "/run/jit-sudo/jitd.sock"
+storage_path = "/var/lib/jit-sudo"
+log_level = "info"
+max_connections = 200
+request_timeout_secs = 30
+
+[security]
+encryption_enabled = true
+key_storage = "tpm"  # Use TPM 2.0 for production key sealing
+key_directory = "/etc/jit-sudo/keys"
+jwks_url = "https://auth.company.com/.well-known/jwks.json"
+trusted_issuers = ["https://jit-broker.company.com", "https://identity.company.com"]
+max_ttl_seconds = 14400  # 4 hours maximum
+require_tls = true
+audit_integrity = true
+
+[approval]
+mode = "risk-based"  # Smart risk-based approval system
+require_justification = true
+min_justification_length = 20
+request_expiry_minutes = 30
+
+[approval.risk_thresholds]
+auto_approve = 2      # Risk 0-2: Auto-approve safe commands
+admin_approve = 6     # Risk 3-6: Single admin approval
+multi_approve = 10    # Risk 7-10: Multiple admin approval
+
+[approval.auto_approve]
+enabled = true
+max_ttl_seconds = 3600  # 1 hour max for auto-approved
+business_hours_only = false
+hours = "00:00-23:59"   # 24/7 operations
+days = "Mon-Sun"
+non_production_only = false  # Allow auto-approve in prod for safe commands
+
+# Safe commands for auto-approval
+commands = [
+    "ls", "cat", "grep", "head", "tail", "find", "locate",
+    "ps", "df", "free", "whoami", "id", "date", "uptime",
+    "netstat", "ss", "lsof", "top", "htop", "iostat",
+    "systemctl status", "journalctl", "less", "more"
+]
+
+privileged_users = [
+    "sre-team", "devops-lead", "security-admin"
+]
+
+[approval.never_approve]
+# Commands that should NEVER be auto-approved
+commands = [
+    "rm -rf", "dd", "mkfs", "fdisk", "parted",
+    "shutdown", "reboot", "halt", "poweroff",
+    "iptables -F", "ufw --force", "systemctl stop"
+]
+
+patterns = [
+    "*password*", "*shadow*", "*private*", "*secret*",
+    "*/etc/passwd", "*/etc/shadow", "*/root/*",
+    "*database*", "*backup*", "*/var/lib/mysql/*"
+]
+
+blocked_users = []  # No users blocked in production
+
+[risk_scoring]
+# Command risk weights (higher = more risky)
+[risk_scoring.command_weights]
+rm = 5
+dd = 9
+systemctl = 3
+service = 3
+iptables = 7
+mount = 4
+umount = 4
+chmod = 2
+chown = 2
+kill = 2
+killall = 3
+pkill = 3
+nginx = 2
+apache2 = 2
+mysql = 6
+postgresql = 6
+docker = 4
+kubectl = 5
+
+# Risk modifiers
+production_multiplier = 1.5  # 50% risk increase for production
+after_hours_bonus = 1        # Small increase for after-hours
+emergency_flag_bonus = 0     # Don't penalize legitimate emergencies
+privileged_user_bonus = 1    # Slight increase for admin users
+
+[logging]
+audit_path = "/var/log/jit-sudo/audit.log"
+app_log_path = "/var/log/jit-sudo/app.log"
+max_size_mb = 500    # 500MB log files
+max_files = 30       # Keep 30 files (15GB total)
+format = "json"      # Structured logging for SIEM
+syslog_enabled = true
+syslog_facility = "local1"
+
+[notifications]
+slack_webhook = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+admin_emails = [
+    "security@company.com",
+    "sre-team@company.com", 
+    "devops-leads@company.com"
+]
+user_notifications = true
+cooldown_minutes = 2  # Reduce notification spam
+
+[notifications.email]
+smtp_host = "smtp.company.com"
+smtp_port = 587
+username = "jit-sudo@company.com"
+password = "$SMTP_PASSWORD"  # Use env var or vault
+from_address = "jit-sudo@company.com"
+use_tls = true
+
+# Optional: PagerDuty for high-risk approvals
+# pagerduty_key = "your-pagerduty-integration-key"

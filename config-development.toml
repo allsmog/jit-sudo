@@ -1,0 +1,91 @@
+# JIT Sudo Development Configuration
+# /etc/jit-sudo/config-dev.toml
+
+[core]
+socket_path = "/tmp/jit-sudo/jitd.sock"  # Use tmp for dev
+storage_path = "/tmp/jit-sudo/data"
+log_level = "debug"  # Verbose logging for development
+max_connections = 50
+request_timeout_secs = 60
+
+[security]
+encryption_enabled = true
+key_storage = "file"  # File-based keys for dev (not TPM)
+key_directory = "./dev-keys"
+jwks_url = "https://dev-auth.company.com/.well-known/jwks.json"
+trusted_issuers = ["https://dev-jit-broker.company.com", "https://localhost:8080"]
+max_ttl_seconds = 86400  # 24 hours for development
+require_tls = false      # Allow HTTP for local dev
+audit_integrity = false  # Simplified for dev
+
+[approval]
+mode = "auto"  # Auto-approve everything in development
+require_justification = false  # No justification required
+min_justification_length = 5
+request_expiry_minutes = 60    # Longer expiry for dev work
+
+[approval.risk_thresholds]
+auto_approve = 10     # Auto-approve everything (risk 0-10)
+admin_approve = 10    # No admin approval needed
+multi_approve = 10    # No multi-approval needed
+
+[approval.auto_approve]
+enabled = true
+max_ttl_seconds = 86400   # 24 hours max
+business_hours_only = false
+hours = "00:00-23:59"
+days = "Mon-Sun"
+non_production_only = true
+
+# Broader set of commands for development
+commands = [
+    "ls", "cat", "grep", "head", "tail", "find", "locate",
+    "ps", "df", "free", "whoami", "id", "date", "uptime",
+    "systemctl", "service", "nginx", "apache2",
+    "mkdir", "touch", "cp", "mv", "chmod", "chown",
+    "git", "npm", "cargo", "docker", "kubectl"
+]
+
+privileged_users = ["dev", "developer", "admin", "test"]
+
+[approval.never_approve]
+# Only block truly dangerous commands in dev
+commands = [
+    "rm -rf /", "dd if=/dev/zero", "mkfs", "fdisk",
+    "shutdown -h now", "reboot -f"
+]
+patterns = ["*password*", "*/etc/shadow"]
+blocked_users = []
+
+[risk_scoring]
+[risk_scoring.command_weights]
+# Lower risk weights for development
+rm = 2
+systemctl = 1
+chmod = 1
+chown = 1
+docker = 2
+kubectl = 2
+
+production_multiplier = 1.0  # No production penalty in dev
+after_hours_bonus = 0        # No after-hours penalty
+emergency_flag_bonus = 0
+privileged_user_bonus = 0
+
+[logging]
+audit_path = "./logs/audit.log"
+app_log_path = "./logs/app.log"
+max_size_mb = 10      # Small log files for dev
+max_files = 5         # Keep fewer files
+format = "text"       # Human-readable for dev
+syslog_enabled = false
+syslog_facility = "local0"
+
+[notifications]
+# No external notifications in dev - just console output
+slack_webhook = ""
+admin_emails = ["dev@localhost"]
+user_notifications = false
+cooldown_minutes = 0
+
+# No email config needed for dev
