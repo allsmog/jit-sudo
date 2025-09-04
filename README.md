@@ -70,31 +70,29 @@ sudo systemctl restart nginx  # ❌ Denied - JIT approval required
 3. **jitctl** - Command-line interface for grant management
 4. **jit_approval.so** - Sudo 1.9+ approval plugin
 
-## 🛠️ Installation Requirements
+## 📝 System Requirements
 
-**System Requirements:**
-- Linux system (tested on Ubuntu 22.04)
-- Sudo 1.9+ with plugin support
-- Rust 1.70+ with Cargo
-- GCC compiler
+**Supported Operating Systems:**
+- Ubuntu 18.04+ / Debian 10+
+- RHEL 8+ / CentOS 8+ / Fedora 32+
+- Amazon Linux 2+
 
-**Check Your System:**
+**Automatic Dependencies (handled by package installer):**
+- Sudo 1.9+ with plugin support ✅
+- OpenSSL/LibSSL libraries ✅
+- Systemd service manager ✅
+
+**Compatibility Check:**
 ```bash
-# Check sudo version (must be 1.9+)
+# Verify sudo version and plugin support
 sudo -V | head -1
-# Sudo version 1.9.9  ✅ Good
+# Expected: Sudo version 1.9.x or higher
 
-# Check if plugin support is available
 sudo -V | grep -i plugin
-# Plugin support: enabled  ✅ Good
-
-# Install Rust if needed
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Security validation
-cargo install cargo-audit
-cargo audit  # Must pass with no critical vulnerabilities
+# Expected: Plugin support: enabled
 ```
+
+**No build tools required!** Pre-compiled packages available for all supported systems.
 
 ### 🔐 **Production Security Setup**
 
@@ -117,15 +115,47 @@ export JIT_ENCRYPTION_KEY_DIR=/etc/jit-sudo/keys
 export JIT_SLACK_WEBHOOK=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 export JIT_ADMIN_EMAILS=security@yourcompany.com
 
-# 5. Set proper socket permissions
+# 5. Create configuration file
+sudo cp config-production.toml /etc/jit-sudo/config.toml
+sudo chown root:jitd /etc/jit-sudo/config.toml
+sudo chmod 640 /etc/jit-sudo/config.toml
+
+# 6. Start the daemon
 sudo systemctl enable jitd
 sudo systemctl start jitd
-sudo chown root:sudo /run/jit-sudo/jitd.sock
-sudo chmod 660 /run/jit-sudo/jitd.sock
+
+# 7. Verify configuration
+jitctl config show
 
 ## 🚀 Quick Start Guide
 
 ### Step 1: Install JIT Sudo
+
+**🎉 Simple Package Installation (Recommended)**
+
+**Ubuntu/Debian:**
+```bash
+wget https://github.com/allsmog/jit-sudo/releases/download/v1.0.0/jit-sudo_1.0.0_amd64.deb
+sudo dpkg -i jit-sudo_1.0.0_amd64.deb
+sudo apt-get install -f
+```
+
+**RHEL/CentOS/Fedora:**
+```bash
+wget https://github.com/allsmog/jit-sudo/releases/download/v1.0.0/jit-sudo-1.0.0-1.fc38.x86_64.rpm
+sudo rpm -ivh jit-sudo-1.0.0-1.fc38.x86_64.rpm
+```
+
+**✅ That's it!** The package installer automatically:
+- Creates the `jitd` service user and group
+- Generates cryptographic keys in `/etc/jit-sudo/keys/`
+- Configures the sudo plugin in `/etc/sudo.conf`
+- Sets up systemd service and starts the daemon
+- Creates default configuration in `/etc/jit-sudo/config.toml`
+
+**Manual Build (Development Only)**
+<details>
+<summary>Click to expand manual build instructions</summary>
 
 ```bash
 # Clone the repository
@@ -145,9 +175,24 @@ sudo cp jit-approval-plugin/jit_approval.so /usr/libexec/jit-sudo/
 # Configure sudo to use JIT approval
 echo "Plugin jit_approval /usr/libexec/jit-sudo/jit_approval.so" | sudo tee -a /etc/sudo.conf
 
+# Create basic configuration
+sudo mkdir -p /etc/jit-sudo
+sudo cat > /etc/jit-sudo/config.toml <<EOF
+[approval]
+mode = "risk-based"  # Smart auto-approval for safe commands
+
+[approval.risk_thresholds]  
+auto_approve = 2      # Low-risk commands auto-approve
+admin_approve = 6     # Medium-risk need admin
+
+[approval.auto_approve]
+commands = ["ls", "cat", "grep", "ps", "df"]
+EOF
+
 # Start the daemon
-sudo /usr/libexec/jit-sudo/jitd --foreground &
+sudo /usr/libexec/jit-sudo/jitd  # Uses config.toml automatically
 ```
+</details>
 
 ### Step 2: Smart Risk-Based Approval System
 
@@ -261,23 +306,61 @@ jitctl admin revoke-all --user alice --reason "Security incident"
 
 ## ⚙️ Configuration
 
-### Daemon Configuration
+JIT Sudo uses a **production-grade configuration system** with TOML/YAML files, CLI management, and smart defaults. No more clunky environment variables!
 
-Environment variables for `jitd`:
+### 📁 **Configuration Files** (Recommended)
+
+**Primary Configuration**: `/etc/jit-sudo/config.toml`
+```toml
+[core]
+socket_path = "/run/jit-sudo/jitd.sock"
+storage_path = "/var/lib/jit-sudo"
+log_level = "info"
+
+[approval]
+mode = "risk-based"  # auto, manual, risk-based, disabled
+
+[approval.risk_thresholds]
+auto_approve = 2      # 0-2: Auto-approve instantly
+admin_approve = 6     # 3-6: Single admin approval
+multi_approve = 10    # 7-10: Multiple admin approval
+
+[approval.auto_approve]
+enabled = true
+commands = ["ls", "cat", "grep", "ps", "df", "free"]
+max_ttl_seconds = 3600  # 1 hour max for auto-approved
+```
+
+### 🎯 **Deployment-Specific Configs**
+
+- **`config-production.toml`**: Enterprise production ready
+- **`config-development.toml`**: Auto-approve everything for dev  
+- **`config-high-security.toml`**: SOX/PCI/HIPAA compliance ready
+- **`config-yaml-example.yaml`**: YAML format alternative
+
+### 🔧 **Configuration CLI Management**
 
 ```bash
-# Socket path (default: /run/jit-sudo/jitd.sock)
-JIT_SOCKET_PATH=/custom/path/jitd.sock
+# View current configuration
+jitctl config show
 
-# Storage directory (default: /var/lib/jit-sudo)
-JIT_STORAGE_PATH=/custom/storage
+# Set configuration values
+jitctl config set approval.mode auto                    # Auto-approve everything
+jitctl config set approval.risk_thresholds.auto_approve 5  # Higher auto-approve
 
-# Log level (debug, info, warn, error)
-JIT_LOG_LEVEL=info
+# Validate configuration
+jitctl config validate /etc/jit-sudo/config.toml
 
-# Cache size for active grants
-JIT_CACHE_SIZE=1000
+# Load environment-specific configs
+jitctl config load --env production
+jitctl config load --env development
 ```
+
+### 📚 **[Complete Configuration Guide →](CONFIGURATION.md)**
+
+### 🔄 **Environment Variables** (Legacy Support)
+
+For backward compatibility only:
 
 ### Security Configuration
 
@@ -301,20 +384,33 @@ export JIT_STORAGE_PATH=/var/lib/jit-sudo
 # Keys automatically derived from host identity + TPM if available
 ```
 
-**Smart Approval Configuration:**
+**Configuration File Setup (Recommended):**
 ```bash
-# Configure approval notifications
-export JIT_SLACK_WEBHOOK="https://hooks.slack.com/..."
-export JIT_ADMIN_EMAILS="security@company.com,ops@company.com"
+# Create configuration directory
+sudo mkdir -p /etc/jit-sudo
 
-# Set intelligent risk thresholds
-export JIT_AUTO_APPROVE_THRESHOLD=2   # Risk 0-2: Instant auto-approval
-export JIT_ADMIN_APPROVE_THRESHOLD=6  # Risk 3-6: Single admin approval  
-export JIT_MULTI_APPROVE_THRESHOLD=7  # Risk 7-10: Multiple admins required
+# Copy appropriate configuration for your environment
+sudo cp config-production.toml /etc/jit-sudo/config.toml      # Production
+sudo cp config-development.toml /etc/jit-sudo/config.toml     # Development  
+sudo cp config-high-security.toml /etc/jit-sudo/config.toml   # High Security
 
-# Configure auto-approval patterns (safe commands)
-export JIT_AUTO_APPROVE_COMMANDS="ls,cat,grep,head,tail,find,ps,df,free"
-export JIT_NEVER_AUTO_APPROVE="rm,dd,mkfs,fdisk,iptables,shutdown,reboot"
+# Set proper permissions
+sudo chown root:jitd /etc/jit-sudo/config.toml
+sudo chmod 640 /etc/jit-sudo/config.toml
+
+# Validate configuration
+jitctl config validate /etc/jit-sudo/config.toml
+
+# Start daemon with config file
+sudo systemctl start jitd  # Automatically uses /etc/jit-sudo/config.toml
+```
+
+**Legacy Environment Variables (backward compatibility):**
+```bash
+# Still supported but configuration files are preferred
+export JIT_SOCKET_PATH=/run/jit-sudo/jitd.sock
+export JIT_APPROVAL_MODE=risk-based
+export JIT_AUTO_APPROVE_THRESHOLD=2
 ```
 
 ### Plugin Debug Mode
@@ -513,13 +609,16 @@ spec:
 ### Enterprise Integration
 
 ```bash
-# OIDC/SAML broker integration
-export JIT_BROKER_URL="https://jit-broker.company.com"
-export JIT_JWKS_URL="https://auth.company.com/.well-known/jwks.json"
-export JIT_ISSUER="https://auth.company.com"
+# Use production configuration
+sudo cp config-production.toml /etc/jit-sudo/config.toml
 
-# Start with enterprise config
-jitd --config /etc/jit-sudo/production.toml
+# Or configure programmatically
+jitctl config set security.jwks_url "https://auth.company.com/.well-known/jwks.json"
+jitctl config set security.trusted_issuers "[https://jit-broker.company.com]"
+jitctl config set notifications.slack_webhook "https://hooks.slack.com/..."
+
+# Start with enterprise config (auto-loads from /etc/jit-sudo/config.toml)
+sudo systemctl start jitd
 ```
 
 ### Backup & Recovery

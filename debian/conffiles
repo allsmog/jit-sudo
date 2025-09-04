@@ -1,0 +1,3 @@
+/etc/jit-sudo/config.toml
+/etc/jit-sudo/keys/private.pem
+/etc/jit-sudo/keys/public.pem

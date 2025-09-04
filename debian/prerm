@@ -1,0 +1,41 @@
+#!/bin/bash
+# JIT Sudo pre-removal script
+
+set -e
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        echo "🛑 Stopping JIT Sudo daemon..."
+        
+        # Stop the daemon if it's running
+        if command -v systemctl >/dev/null 2>&1; then
+            if systemctl is-active --quiet jitd; then
+                systemctl stop jitd
+                echo "✅ JIT Sudo daemon stopped"
+            fi
+            
+            if [ "$1" = "remove" ]; then
+                systemctl disable jitd 2>/dev/null || true
+            fi
+        fi
+        
+        # Remove sudo plugin configuration (only on remove, not upgrade)
+        if [ "$1" = "remove" ]; then
+            echo "🔌 Removing sudo plugin configuration..."
+            if [ -f /etc/sudo.conf ]; then
+                sed -i '/jit_approval/d' /etc/sudo.conf
+            fi
+        fi
+        
+        ;;
+        
+    failed-upgrade)
+        ;;
+        
+    *)
+        echo "prerm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

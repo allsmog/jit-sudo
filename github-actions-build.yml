@@ -1,0 +1,251 @@
+name: Build and Release Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-deb:
+    name: Build Debian Package
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          
+      - name: Cache Rust dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev pkg-config
+          
+      - name: Build Rust components
+        run: cargo build --release --workspace
+        
+      - name: Build C plugin
+        run: |
+          cd jit-approval-plugin
+          gcc -shared -fPIC -o jit_approval.so jit_approval.c
+          
+      - name: Create package directory structure
+        run: |
+          mkdir -p jit-sudo_1.0.0/usr/bin
+          mkdir -p jit-sudo_1.0.0/usr/sbin  
+          mkdir -p jit-sudo_1.0.0/usr/lib/jit-sudo
+          mkdir -p jit-sudo_1.0.0/etc/jit-sudo/keys
+          mkdir -p jit-sudo_1.0.0/lib/systemd/system
+          mkdir -p jit-sudo_1.0.0/usr/share/jit-sudo
+          
+      - name: Copy files to package
+        run: |
+          # Binaries
+          cp target/release/jitctl jit-sudo_1.0.0/usr/bin/
+          cp target/release/jitd jit-sudo_1.0.0/usr/sbin/
+          cp jit-approval-plugin/jit_approval.so jit-sudo_1.0.0/usr/lib/jit-sudo/
+          
+          # Configuration files
+          cp config-production.toml jit-sudo_1.0.0/usr/share/jit-sudo/
+          cp config-development.toml jit-sudo_1.0.0/usr/share/jit-sudo/
+          cp config-high-security.toml jit-sudo_1.0.0/usr/share/jit-sudo/
+          
+          # Systemd service
+          cp jitd/jitd.service jit-sudo_1.0.0/lib/systemd/system/
+          
+          # Documentation
+          cp README.md CONFIGURATION.md SECURITY_AUDIT.md jit-sudo_1.0.0/usr/share/jit-sudo/
+          
+      - name: Copy Debian control files
+        run: |
+          mkdir -p jit-sudo_1.0.0/DEBIAN
+          cp debian/control jit-sudo_1.0.0/DEBIAN/
+          cp debian/postinst jit-sudo_1.0.0/DEBIAN/
+          cp debian/prerm jit-sudo_1.0.0/DEBIAN/
+          cp debian/postrm jit-sudo_1.0.0/DEBIAN/
+          cp debian/conffiles jit-sudo_1.0.0/DEBIAN/
+          chmod +x jit-sudo_1.0.0/DEBIAN/postinst
+          chmod +x jit-sudo_1.0.0/DEBIAN/prerm
+          chmod +x jit-sudo_1.0.0/DEBIAN/postrm
+          
+      - name: Build Debian package
+        run: |
+          dpkg-deb --build jit-sudo_1.0.0
+          mv jit-sudo_1.0.0.deb jit-sudo_1.0.0_amd64.deb
+          
+      - name: Validate package
+        run: |
+          dpkg-deb --info jit-sudo_1.0.0_amd64.deb
+          dpkg-deb --contents jit-sudo_1.0.0_amd64.deb
+          
+      - name: Upload Debian package
+        uses: actions/upload-artifact@v3
+        with:
+          name: jit-sudo-deb
+          path: jit-sudo_1.0.0_amd64.deb
+
+  build-rpm:
+    name: Build RPM Package  
+    runs-on: ubuntu-22.04
+    container: fedora:38
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install build dependencies
+        run: |
+          dnf install -y rpm-build rpmdevtools rust cargo gcc openssl-devel systemd-rpm-macros
+          
+      - name: Setup RPM build environment
+        run: |
+          rpmdev-setuptree
+          
+      - name: Build Rust components
+        run: cargo build --release --workspace
+        
+      - name: Build C plugin
+        run: |
+          cd jit-approval-plugin
+          gcc -shared -fPIC -o jit_approval.so jit_approval.c
+          
+      - name: Create source tarball
+        run: |
+          mkdir -p jit-sudo-1.0.0
+          cp -r * jit-sudo-1.0.0/
+          tar -czf ~/rpmbuild/SOURCES/jit-sudo-1.0.0.tar.gz jit-sudo-1.0.0
+          
+      - name: Build RPM
+        run: |
+          rpmbuild -ba jit-sudo.spec
+          
+      - name: Copy RPM to workspace
+        run: |
+          cp ~/rpmbuild/RPMS/x86_64/jit-sudo-1.0.0-1.fc38.x86_64.rpm .
+          
+      - name: Upload RPM package
+        uses: actions/upload-artifact@v3
+        with:
+          name: jit-sudo-rpm
+          path: jit-sudo-1.0.0-1.fc38.x86_64.rpm
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-deb, build-rpm]
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download packages
+        uses: actions/download-artifact@v3
+        
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            jit-sudo-deb/jit-sudo_1.0.0_amd64.deb
+            jit-sudo-rpm/jit-sudo-1.0.0-1.fc38.x86_64.rpm
+          body: |
+            ## JIT Sudo v${{ github.ref_name }}
+            
+            ### Installation
+            
+            **Ubuntu/Debian:**
+            ```bash
+            wget https://github.com/allsmog/jit-sudo/releases/download/${{ github.ref_name }}/jit-sudo_1.0.0_amd64.deb
+            sudo dpkg -i jit-sudo_1.0.0_amd64.deb
+            sudo apt-get install -f
+            ```
+            
+            **RHEL/CentOS/Fedora:**  
+            ```bash
+            wget https://github.com/allsmog/jit-sudo/releases/download/${{ github.ref_name }}/jit-sudo-1.0.0-1.fc38.x86_64.rpm
+            sudo rpm -ivh jit-sudo-1.0.0-1.fc38.x86_64.rpm
+            ```
+            
+            ### Quick Start
+            ```bash
+            # Request access (auto-approves safe commands)
+            jitctl request --cmd "ls /var/log" --ttl 5m --justification "Check logs"
+            
+            # Check status
+            jitctl status
+            
+            # Admin commands
+            jitctl admin list-pending
+            jitctl admin approve <request-id>
+            ```
+            
+            ### What's New
+            - Complete JIT sudo implementation with approval workflows
+            - Smart risk-based auto-approval system
+            - Security hardening and comprehensive audit trails
+            - Enterprise integration (Slack, email, OIDC/SAML)
+            - Production-ready configuration system
+            - Package-based installation for better UX
+            
+            ### Documentation
+            - [README](https://github.com/allsmog/jit-sudo/blob/main/README.md)
+            - [Configuration Guide](https://github.com/allsmog/jit-sudo/blob/main/CONFIGURATION.md)
+            - [Security Audit](https://github.com/allsmog/jit-sudo/blob/main/SECURITY_AUDIT.md)
+            
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test-packages:
+    name: Test Package Installation
+    needs: [build-deb, build-rpm]
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        os: [ubuntu:22.04, ubuntu:20.04, debian:11, debian:12]
+    container: ${{ matrix.os }}
+    steps:
+      - name: Download Debian package
+        uses: actions/download-artifact@v3
+        with:
+          name: jit-sudo-deb
+          
+      - name: Install package dependencies
+        run: |
+          apt-get update
+          apt-get install -y sudo openssl
+          
+      - name: Test package installation
+        run: |
+          dpkg -i jit-sudo_1.0.0_amd64.deb || true
+          apt-get install -f -y
+          
+      - name: Verify installation
+        run: |
+          # Check binaries exist
+          which jitctl
+          which jitd
+          
+          # Check configuration
+          test -f /etc/jit-sudo/config.toml
+          
+          # Check service
+          systemctl status jitd --no-pager || true
+          
+          # Test basic functionality
+          jitctl --version
+          jitctl config show || true

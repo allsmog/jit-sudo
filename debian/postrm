@@ -1,0 +1,43 @@
+#!/bin/bash
+# JIT Sudo post-removal script
+
+set -e
+
+case "$1" in
+    purge)
+        echo "🧹 Purging JIT Sudo data..."
+        
+        # Remove user and group
+        if getent passwd jitd >/dev/null; then
+            deluser --system jitd
+        fi
+        
+        if getent group jitd >/dev/null; then
+            delgroup --system jitd
+        fi
+        
+        # Remove data directories (only on purge)
+        rm -rf /var/lib/jit-sudo
+        rm -rf /var/log/jit-sudo
+        rm -rf /run/jit-sudo
+        rm -rf /etc/jit-sudo
+        
+        # Clean up any remaining sudo configuration
+        if [ -f /etc/sudo.conf ]; then
+            sed -i '/jit_approval/d' /etc/sudo.conf
+        fi
+        
+        echo "✅ JIT Sudo completely removed"
+        ;;
+        
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        # Don't remove data on these events
+        ;;
+        
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

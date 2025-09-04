@@ -1,0 +1,166 @@
+#!/bin/bash
+# JIT Sudo post-installation script
+
+set -e
+
+case "$1" in
+    configure)
+        echo "🔧 Configuring JIT Sudo..."
+        
+        # Create jitd system user and group
+        if ! getent group jitd >/dev/null; then
+            addgroup --system jitd
+        fi
+        
+        if ! getent passwd jitd >/dev/null; then
+            adduser --system --ingroup jitd --home /var/lib/jit-sudo \
+                    --no-create-home --shell /bin/false \
+                    --gecos "JIT Sudo daemon" jitd
+        fi
+        
+        # Create necessary directories
+        mkdir -p /var/lib/jit-sudo
+        mkdir -p /var/log/jit-sudo
+        mkdir -p /run/jit-sudo
+        mkdir -p /etc/jit-sudo/keys
+        
+        # Set proper ownership and permissions
+        chown jitd:jitd /var/lib/jit-sudo
+        chown jitd:jitd /var/log/jit-sudo
+        chown jitd:jitd /run/jit-sudo
+        chmod 750 /var/lib/jit-sudo
+        chmod 750 /var/log/jit-sudo
+        chmod 755 /run/jit-sudo
+        
+        # Secure configuration directory
+        chown root:jitd /etc/jit-sudo
+        chown root:jitd /etc/jit-sudo/keys
+        chmod 750 /etc/jit-sudo
+        chmod 750 /etc/jit-sudo/keys
+        
+        # Set configuration file permissions
+        if [ -f /etc/jit-sudo/config.toml ]; then
+            chown root:jitd /etc/jit-sudo/config.toml
+            chmod 640 /etc/jit-sudo/config.toml
+        fi
+        
+        # Generate cryptographic keys if they don't exist
+        if [ ! -f /etc/jit-sudo/keys/private.pem ]; then
+            echo "🔐 Generating cryptographic keys..."
+            openssl ecparam -genkey -name prime256v1 -out /etc/jit-sudo/keys/private.pem
+            openssl ec -in /etc/jit-sudo/keys/private.pem -pubout -out /etc/jit-sudo/keys/public.pem
+            chown root:jitd /etc/jit-sudo/keys/*.pem
+            chmod 640 /etc/jit-sudo/keys/private.pem
+            chmod 644 /etc/jit-sudo/keys/public.pem
+        fi
+        
+        # Configure sudo plugin (safely)
+        SUDO_CONF="/etc/sudo.conf"
+        JIT_PLUGIN_LINE="Plugin jit_approval /usr/lib/jit-sudo/jit_approval.so"
+        
+        if [ -f "$SUDO_CONF" ] && ! grep -q "jit_approval" "$SUDO_CONF"; then
+            echo "🔌 Configuring sudo plugin..."
+            echo "$JIT_PLUGIN_LINE" >> "$SUDO_CONF"
+        elif [ ! -f "$SUDO_CONF" ]; then
+            echo "$JIT_PLUGIN_LINE" > "$SUDO_CONF"
+        fi
+        
+        # Create default configuration if it doesn't exist
+        if [ ! -f /etc/jit-sudo/config.toml ]; then
+            echo "📝 Creating default configuration..."
+            cat > /etc/jit-sudo/config.toml << 'EOF'
+# JIT Sudo Default Configuration
+# Edit this file to customize your deployment
+
+[core]
+socket_path = "/run/jit-sudo/jitd.sock"
+storage_path = "/var/lib/jit-sudo"
+log_level = "info"
+
+[security]
+encryption_enabled = true
+key_storage = "file"
+key_directory = "/etc/jit-sudo/keys"
+
+[approval]
+mode = "risk-based"  # Start with smart defaults
+require_justification = true
+min_justification_length = 10
+
+[approval.risk_thresholds]
+auto_approve = 2      # Low-risk commands auto-approve
+admin_approve = 6     # Medium-risk need admin approval
+multi_approve = 10    # High-risk need multiple approvals
+
+[approval.auto_approve]
+enabled = true
+max_ttl_seconds = 3600  # 1 hour max for auto-approved
+commands = [
+    "ls", "cat", "grep", "head", "tail", "find",
+    "ps", "df", "free", "whoami", "id", "date"
+]
+
+[logging]
+audit_path = "/var/log/jit-sudo/audit.log"
+app_log_path = "/var/log/jit-sudo/app.log"
+format = "json"
+
+[notifications]
+admin_emails = ["admin@localhost"]
+user_notifications = true
+EOF
+            chown root:jitd /etc/jit-sudo/config.toml
+            chmod 640 /etc/jit-sudo/config.toml
+        fi
+        
+        # Enable and start systemd service
+        if command -v systemctl >/dev/null 2>&1; then
+            echo "🚀 Starting JIT Sudo daemon..."
+            systemctl daemon-reload
+            systemctl enable jitd
+            
+            # Start the service and check if it started successfully
+            if systemctl start jitd; then
+                echo "✅ JIT Sudo daemon started successfully"
+            else
+                echo "⚠️  JIT Sudo daemon failed to start - check logs with: journalctl -u jitd"
+            fi
+        fi
+        
+        # Create jitctl configuration directory for users
+        if [ ! -d /etc/skel/.jit-sudo ]; then
+            mkdir -p /etc/skel/.jit-sudo
+            chmod 755 /etc/skel/.jit-sudo
+        fi
+        
+        echo ""
+        echo "🎉 JIT Sudo installation complete!"
+        echo ""
+        echo "Quick start:"
+        echo "  jitctl request --cmd \"ls /var/log\" --ttl 5m --justification \"Check logs\""
+        echo "  jitctl status"
+        echo ""
+        echo "Configuration:"
+        echo "  Edit /etc/jit-sudo/config.toml to customize settings"
+        echo "  View config: jitctl config show"
+        echo "  Validate: jitctl config validate"
+        echo ""
+        echo "Admin commands:"
+        echo "  jitctl admin list-pending    # View requests awaiting approval"
+        echo "  jitctl admin approve <id>    # Approve a request"
+        echo ""
+        echo "Documentation: https://github.com/allsmog/jit-sudo/blob/main/README.md"
+        echo ""
+        
+        ;;
+        
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+        
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,31 @@
+Package: jit-sudo
+Version: 1.0.0
+Section: admin
+Priority: optional
+Architecture: amd64
+Maintainer: JIT Sudo Team <support@jit-sudo.io>
+Homepage: https://github.com/allsmog/jit-sudo
+Vcs-Git: https://github.com/allsmog/jit-sudo.git
+Vcs-Browser: https://github.com/allsmog/jit-sudo
+Depends: sudo (>= 1.9.0), libc6 (>= 2.17), libssl1.1 | libssl3, adduser
+Recommends: systemd
+Suggests: slack-notifier, postfix
+Description: Just-In-Time sudo access with approval workflows
+ JIT Sudo provides time-limited, auditable sudo access through intelligent
+ approval workflows. It replaces permanent sudo privileges with temporary,
+ cryptographically-verified grants that automatically expire.
+ .
+ Key features:
+  * Time-limited sudo access (TTL-based expiration)
+  * Smart risk-based approval system
+  * Auto-approval for safe commands, admin approval for sensitive operations
+  * Complete audit trails for compliance (SOX/PCI/HIPAA)
+  * Enterprise integration (Slack, email, OIDC/SAML)
+  * Encrypted storage with AES-256-GCM
+  * Production-ready security hardening
+ .
+ This package includes:
+  * jitctl - Command-line interface for users and admins
+  * jitd - Background daemon for grant management
+  * jit_approval.so - Sudo plugin for access validation
+  * Configuration files and systemd service
